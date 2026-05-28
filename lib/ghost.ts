@@ -3,14 +3,16 @@ import { SignJWT } from "jose";
 // ─── Ghost JWT Token 생성 ─────────────────────────────────
 export async function getGhostToken(): Promise<string> {
   const apiKey = process.env.GHOST_ADMIN_API_KEY;
-  if (!apiKey) throw new Error("GHOST_ADMIN_API_KEY 환경변수가 설정되지 않았습니다");
+  if (!apiKey)
+    throw new Error("GHOST_ADMIN_API_KEY 환경변수가 설정되지 않았습니다");
 
   const [id, secret] = apiKey.split(":");
-  if (!id || !secret) throw new Error("API Key 형식이 올바르지 않습니다 (id:secret)");
+  if (!id || !secret)
+    throw new Error("API Key 형식이 올바르지 않습니다 (id:secret)");
 
   // hex string → Uint8Array
   const keyBytes = new Uint8Array(
-    secret.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+    secret.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)),
   );
 
   const token = await new SignJWT({})
@@ -33,7 +35,7 @@ export function getGhostUrl(): string {
 // ─── 이미지 업로드 ────────────────────────────────────────
 export async function uploadImageToGhost(
   imageBuffer: Buffer,
-  filename: string
+  filename: string,
 ): Promise<string> {
   const token = await getGhostToken();
   const ghostUrl = getGhostUrl();
@@ -65,16 +67,16 @@ export async function createGhostPost(params: {
   title: string;
   html: string;
   status: "draft" | "published";
-  slug?: string;
-  metaTitle?: string;
   metaDescription?: string;
+  metaTitle?: string;
   canonicalUrl?: string;
+  author?: string;
   tags?: string[];
 }): Promise<{ success: boolean; postUrl?: string; error?: string }> {
   const token = await getGhostToken();
   const ghostUrl = getGhostUrl();
 
-  const postPayload: Record<string, unknown> = {
+  const post: Record<string, any> = {
     title: params.title,
     html: `<!--kg-card-begin: html-->${params.html}<!--kg-card-end: html-->`,
     status: params.status,
@@ -84,19 +86,22 @@ export async function createGhostPost(params: {
       .map((t) => ({ name: t.trim() })),
   };
 
-  if (params.slug?.trim()) {
-    postPayload.slug = params.slug.trim();
-  }
-  if (params.metaTitle?.trim()) {
-    postPayload.meta_title = params.metaTitle.trim();
-  }
-  if (params.canonicalUrl?.trim()) {
-    postPayload.canonical_url = params.canonicalUrl.trim();
+  // Meta Title (비워두면 Ghost가 title 사용)
+  if (params.metaTitle) {
+    post.meta_title = params.metaTitle;
   }
 
-  const postBody = {
-    posts: [postPayload],
-  };
+  // Canonical URL
+  if (params.canonicalUrl) {
+    post.canonical_url = params.canonicalUrl;
+  }
+
+  // 작성자 — Ghost Staff slug로 지정
+  if (params.author) {
+    post.authors = [{ slug: params.author }];
+  }
+
+  const postBody = { posts: [post] };
 
   const res = await fetch(`${ghostUrl}/ghost/api/admin/posts/?source=html`, {
     method: "POST",
@@ -113,9 +118,9 @@ export async function createGhostPost(params: {
   }
 
   const data = await res.json();
-  const createdPost = data.posts?.[0];
-  if (createdPost) {
-    return { success: true, postUrl: createdPost.url || createdPost.slug };
+  const created = data.posts?.[0];
+  if (created) {
+    return { success: true, postUrl: created.url || created.slug };
   }
   return { success: false, error: "응답에 포스트 데이터가 없습니다" };
 }
